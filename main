@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# --- 1. Select disk ---
+read -p "Which disk do you want to install Arch on? (e.g., /dev/sda): " DISK
+
+# --- 2. Select Desktop Environment ---
+echo "Choose Desktop Environment: kde / gnome / xfce / none"
+read DE_NAME
+
+read -p "Are you sure you want to install $DE_NAME? (y/n): " CONFIRM
+if [ "$CONFIRM" != "y" ]; then
+    echo "DE selection cancelled. Please choose again."
+    read -p "Choose Desktop Environment: kde / gnome / xfce / none: " DE_NAME
+fi
+
+# --- 3. Select theme ---
+read -p "Do you want to install a theme? Type theme name or 'Skip': " THEME
+
+# -----------------------
+#       SILENT INSTALL
+# -----------------------
+{
+  # Wipe and partition disk
+  wipefs -a "$DISK"
+  parted "$DISK" mklabel gpt
+  parted "$DISK" mkpart primary ext4 1MiB 100%
+  mkfs.ext4 "${DISK}1"
+  mount "${DISK}1" /mnt
+
+  # Install base system
+  pacstrap /mnt base linux linux-firmware --noconfirm
+  genfstab -U /mnt >> /mnt/etc/fstab
+
+  # Chroot: install DE and theme
+  arch-chroot /mnt /bin/bash <<EOF
+
+  case "$DE_NAME" in
+      kde)
+          pacman -Sy --noconfirm plasma konsole sddm
+          systemctl enable sddm
+          if [ "$THEME" != "Skip" ]; then
+              pacman -Sy --noconfirm $THEME
+          fi
+          ;;
+      gnome)
+          pacman -Sy --noconfirm gnome gdm
+          systemctl enable gdm
+          if [ "$THEME" != "Skip" ]; then
+              pacman -Sy --noconfirm $THEME
+          fi
+          ;;
+      xfce)
+          pacman -Sy --noconfirm xfce4 xfce4-goodies lightdm lightdm-gtk-greeter
+          systemctl enable lightdm
+          if [ "$THEME" != "Skip" ]; then
+              pacman -Sy --noconfirm $THEME
+          fi
+          ;;
+      none)
+          ;;
+  esac
+
+  # --- App Installer Menu ---
+  while true; do
+      echo "=== App Installer Menu ==="
+      echo "1) Install a package (type package name)"
+      echo "2) Skip"
+      echo "3) Exit"
+      read -p "Choose an option (1/2/3): " APP_CHOICE
+
+      case $APP_CHOICE in
+          1)
+              read -p "Enter package name (e.g., firefox): " PKG
+              pacman -Sy --noconfirm "$PKG"
+              echo "$PKG installed!"
+              ;;
+          2)
+              echo "Skipping package installation..."
+              ;;
+          3)
+              echo "Exiting App Installer"
+              break
+              ;;
+          *)
+              echo "Invalid choice. Try again."
+              ;;
+      esac
+  done
+
+EOF
+} &>/dev/null
+
+# --- 5. Reboot timer ---
+echo "Installation is complete. Your computer will reboot in 15 minutes!"
+sleep 900  # 900 seconds = 15 minutes
+reboot
