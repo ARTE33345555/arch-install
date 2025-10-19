@@ -1,96 +1,84 @@
 #!/bin/bash
 
-# --- 1. Select disk ---
-read -p "Which disk do you want to install Arch on? (e.g., /dev/sda): " DISK
+echo "=== Arch Linux Interactive Installer ==="
 
-# --- 2. Select Desktop Environment ---
-echo "Choose Desktop Environment: kde / gnome / xfce / none"
-read DE_NAME
+# --- 1. Choose language for the system ---
+echo "Select system language (for locale, e.g., en_US.UTF-8, uk_UA.UTF-8):"
+read SYS_LANG
+echo "You selected: $SYS_LANG"
 
-read -p "Are you sure you want to install $DE_NAME? (y/n): " CONFIRM
-if [ "$CONFIRM" != "y" ]; then
-    echo "DE selection cancelled. Please choose again."
-    read -p "Choose Desktop Environment: kde / gnome / xfce / none: " DE_NAME
+# --- 2. Show disks ---
+echo "Available disks:"
+lsblk
+echo "Enter disk to install Linux (e.g., sda, sdb):"
+read DISK_NUM
+DISK="/dev/$DISK_NUM"
+
+# --- 3. Confirm disk choice ---
+echo "You selected $DISK"
+read -p "This may modify partitions. Are you sure? (yes/NO): " CONFIRM
+if [ "$CONFIRM" != "yes" ]; then
+    echo "Installation cancelled."
+    exit 1
 fi
 
-# --- 3. Select theme ---
-read -p "Do you want to install a theme? Type theme name or 'Skip': " THEME
+# --- 4. Choose installation type ---
+echo "Select installation type:"
+echo "1) Full Linux installation (will wipe disk)"
+echo "2) Install Linux alongside existing OS (dual-boot)"
+echo "3) Create Live CD / test environment"
+read -p "Option (1/2/3): " INSTALL_OPTION
 
-# -----------------------
-#       SILENT INSTALL
-# -----------------------
-{
-  # Wipe and partition disk
-  wipefs -a "$DISK"
-  parted "$DISK" mklabel gpt
-  parted "$DISK" mkpart primary ext4 1MiB 100%
-  mkfs.ext4 "${DISK}1"
-  mount "${DISK}1" /mnt
+case $INSTALL_OPTION in
+    1)
+        echo "Full installation on $DISK"
+        FULL_INSTALL=true
+        ;;
+    2)
+        echo "Dual-boot setup: free space will be used for Linux"
+        DUAL_BOOT=true
+        echo "Enter size for Linux partition (e.g., 50G):"
+        read LINUX_SIZE
+        ;;
+    3)
+        echo "Live CD / temporary system"
+        LIVE_CD=true
+        ;;
+    *)
+        echo "Invalid option. Exiting."
+        exit 1
+        ;;
+esac
 
-  # Install base system
-  pacstrap /mnt base linux linux-firmware --noconfirm
-  genfstab -U /mnt >> /mnt/etc/fstab
+# --- 5. Choose Desktop Environment ---
+echo "Choose Desktop Environment (kde / gnome / xfce / none):"
+read DE_NAME
 
-  # Chroot: install DE and theme
-  arch-chroot /mnt /bin/bash <<EOF
+# --- 6. Choose theme ---
+read -p "Install a theme? Enter theme name or 'Skip': " THEME
 
-  case "$DE_NAME" in
-      kde)
-          pacman -Sy --noconfirm plasma konsole sddm
-          systemctl enable sddm
-          if [ "$THEME" != "Skip" ]; then
-              pacman -Sy --noconfirm $THEME
-          fi
-          ;;
-      gnome)
-          pacman -Sy --noconfirm gnome gdm
-          systemctl enable gdm
-          if [ "$THEME" != "Skip" ]; then
-              pacman -Sy --noconfirm $THEME
-          fi
-          ;;
-      xfce)
-          pacman -Sy --noconfirm xfce4 xfce4-goodies lightdm lightdm-gtk-greeter
-          systemctl enable lightdm
-          if [ "$THEME" != "Skip" ]; then
-              pacman -Sy --noconfirm $THEME
-          fi
-          ;;
-      none)
-          ;;
-  esac
+# --- 7. Summary ---
+echo "=== Installation Summary ==="
+echo "Disk: $DISK"
+if [ "$FULL_INSTALL" = true ]; then
+    echo "Type: Full installation"
+elif [ "$DUAL_BOOT" = true ]; then
+    echo "Type: Dual-boot"
+    echo "Linux partition size: $LINUX_SIZE"
+elif [ "$LIVE_CD" = true ]; then
+    echo "Type: Live CD"
+fi
+echo "Desktop Environment: $DE_NAME"
+echo "Theme: $THEME"
+echo "System language: $SYS_LANG"
+read -p "Start installation? (yes/NO): " FINAL_CONFIRM
+if [ "$FINAL_CONFIRM" != "yes" ]; then
+    echo "Installation cancelled."
+    exit 1
+fi
 
-  # --- App Installer Menu ---
-  while true; do
-      echo "=== App Installer Menu ==="
-      echo "1) Install a package (type package name)"
-      echo "2) Skip"
-      echo "3) Exit"
-      read -p "Choose an option (1/2/3): " APP_CHOICE
+# --- 8. Placeholder for installation commands ---
+echo "Starting installation..."
+echo "(Here you can add safe commands for partitioning, formatting, pacstrap, arch-chroot, GRUB, and system configuration)"
+echo "This script is safe and does NOT modify your disk yet."
 
-      case $APP_CHOICE in
-          1)
-              read -p "Enter package name (e.g., firefox): " PKG
-              pacman -Sy --noconfirm "$PKG"
-              echo "$PKG installed!"
-              ;;
-          2)
-              echo "Skipping package installation..."
-              ;;
-          3)
-              echo "Exiting App Installer"
-              break
-              ;;
-          *)
-              echo "Invalid choice. Try again."
-              ;;
-      esac
-  done
-
-EOF
-} &>/dev/null
-
-# --- 5. Reboot timer ---
-echo "Installation is complete. Your computer will reboot in 15 minutes!"
-sleep 900  # 900 seconds = 15 minutes
-reboot
